@@ -24,6 +24,118 @@ const LEFT:Direction = Direction{y:0 , x:-1};
 const RIGHT:Direction = Direction{y:0 , x:1};
 
 
+struct Board<'a> {
+    window: &'a Window,
+    messages:Vec<&'a str>,
+    direction: Direction,
+    food_coordinate:Coordinate,
+    snake: Snake,
+    speed:i32,
+}
+impl <'a> Board<'a>  {
+    fn add_text(&mut self, text: &'a str) {
+        self.messages.push(text);
+    }
+    fn generate_food(&mut self) {
+        let mut rng = rand::rng();
+        self.food_coordinate =  Coordinate{x: rng.random_range(0..self.window.get_max_x()), y: rng.random_range(0..self.window.get_max_y() / 2)};
+        self.window.mvprintw(self.food_coordinate.y, self.food_coordinate.x, "*");
+        self.window.refresh();
+    }
+
+    fn remove_snake_tail(&mut self) {
+        let tail: Coordinate = self.snake.remove_tail();
+        self.window.mvprintw(tail.y, tail.x, " ");
+    }
+    fn print_snake_head(&self) {
+        self.window.mvprintw(self.snake.head().y , self.snake.head().x, self.snake.sign());
+        self.window.refresh();
+    }
+
+    fn catch_push_on_keyboard(&mut self ) {
+        match self.window.getch() {
+            Some(Input::KeyDown) => {
+                if self.direction != UP { // exclude opposite direction for each current direction
+                    self.direction = DOWN;
+                }
+            },
+            Some(Input::KeyUp) => {
+                if self.direction != DOWN {
+                    self.direction = UP;
+                }
+            },
+            Some(Input::KeyLeft) => {
+                if self.direction != RIGHT {
+                    self.direction = LEFT;
+                }
+            },
+            Some(Input::KeyRight) => {
+                if self.direction != LEFT {
+                    self.direction = RIGHT;
+                }
+            }
+            Some(_input) => (),
+            None => ()
+        }
+    }
+
+    fn add_next_step_for_snake(&mut self) {
+        match true {
+            _ if snake_hit_right_wall(self.snake.head().x + self.direction.x, self.window.get_max_x()) => {
+                self.snake.next_step(Coordinate { x: 0, y: self.snake.head().y + self.direction.y });
+            },
+            _ if snake_hit_bottom_wall(self.snake.head().y + self.direction.y, self.window.get_max_x()) => {
+                self.snake.next_step(Coordinate { x:self.snake.head().x + self.direction.x, y: 0 });
+            },
+            _ if snake_hit_left_wall(&self.snake) => {
+                self.snake.next_step(Coordinate { x: self.window.get_max_x(), y: self.snake.head().y + self.direction.y });
+            },
+            _ if snake_hit_top_wall(&self.snake) => {
+                self.snake.next_step(Coordinate { x: self.snake.head().x + self.direction.x, y: self.window.get_max_x() / 2 });
+            },
+            _ => { // snake just moving properly
+                self.snake.next_step(Coordinate { x: self.snake.head().x + self.direction.x, y: self.snake.head().y + self.direction.y });
+            }
+        }
+    }
+    fn print_exit_dialog(&mut self) -> Result<bool, ()>{
+        self.window.clear();
+        self.messages.push("q: Quit");
+        self.messages.push( "n: Try again");
+
+        print_to_center(&self.window, &self.messages);
+
+        loop {
+            match self.window.getch() {
+                Some(input) => {
+                    if input == Input::Character("q".chars().nth(0).unwrap()) {
+                        return Ok(false);
+                    }
+                    if input == Input::Character("n".chars().nth(0).unwrap()) {
+                        self.snake.reset();
+                        self.direction = RIGHT;
+                        self.messages =  vec![];
+                        self.window.clear();
+                        self.window.refresh();
+                        self.generate_food();
+                        return Ok(true);
+                    }
+                },
+                None => ()
+            }
+        }
+    }
+    fn increase_speed_as_need(&mut self, speed_coeff:i32) {
+        self.speed = 200 - (self.snake.len() * speed_coeff);
+    }
+
+    fn snake_delay(&self ) -> u64 {
+        self.speed as u64
+    }
+    fn food_is_eaten(&self) -> bool {
+        self.snake.head().x == self.food_coordinate.x && self.snake.head().y == self.food_coordinate.y
+    }
+}
 fn main() {
     let mut rng = rand::rng();
     let main_window = initscr();
@@ -31,125 +143,71 @@ fn main() {
     use_default_colors();
     curs_set(0); // cursor is invisible
     noecho();
-
     main_window.refresh();
 
     let config = show_menu(&main_window);
-    let window = config.board;
-    let mut direction = RIGHT; // start direction
 
-    let mut food_coordinate: Coordinate = print_random_food_on_board(&window, &mut rng);
-    let mut snake = Snake::new(1, config.snake_limit_len, "*".to_string()); // deref coercing
-    let mut speed;
-
-    let mut final_text: Vec<&str> = vec![];
+    let mut board = Board {
+        window: &config.board,
+        messages:vec![],
+        direction: RIGHT,
+        food_coordinate: print_random_food_on_board(&config.board, &mut rng),
+        snake:Snake::new(1, config.snake_limit_len, "*".to_string()),
+        speed:0
+    };
 
     'main: loop {
-        if snake.has_reached_capacity() {
-            break 'main;
-        }
-
-        if snake.snake_hit_itself() {
-            window.clear();
-            final_text.push("Game Over....🐍");
-            final_text.push("q: Quit");
-            final_text.push("n: Try again");
-            print_to_center(&window, &final_text);
-
-            window.refresh();
-            'end_game:loop {
-                match window.getch() {
-                    Some(input) => {
-                        if input == Input::Character("q".chars().nth(0).unwrap()) {
-                            endwin();
-                            break 'main;
-                        }
-                        if input == Input::Character("n".chars().nth(0).unwrap()) {
-                            snake.reset();
-                            direction = RIGHT;
-                            final_text =  vec![];
-                            window.clear();
-                            window.refresh();
-                            break 'end_game;
-                        }
-                    },
-                    None => ()
-                }
+        if board.snake.has_reached_capacity() {
+            board.add_text("You are win! 🥇");
+            match board.print_exit_dialog() {
+                Ok(repeat_game) => {
+                    if repeat_game == false {
+                        endwin();
+                        break 'main;
+                    }
+                },
+                _ => (),
             }
         }
 
-        if food_is_eaten(snake.head(), &food_coordinate) {
-            snake.increase_len();
-            food_coordinate = print_random_food_on_board(&window, &mut rng);
+        if board.snake.snake_hit_itself() {
+            board.add_text(  "Game Over....🐍");
+            match board.print_exit_dialog() {
+                Ok(repeat_game) => {
+                    if repeat_game == false {
+                        endwin();
+                        break 'main;
+                    }
+                },
+                _ => (),
+            }
+        }
+
+        if board.food_is_eaten() {
+            board.snake.increase_len();
+            board.generate_food();
         }
 
         // clean tail of snake
-        while snake.capacity_is_exceed() {
-            let tail: Coordinate = snake.remove_tail();
-            clean_symbol(&window, tail);
+        while board.snake.capacity_is_exceed() {
+            board.remove_snake_tail();
         }
-
-        print_head_snake_on_board(&window, &snake);
+        board.print_snake_head();
 
         // change direction after user click arrow on keyboard
-        match window.getch() {
-            Some(Input::KeyDown) => {
-                if direction != UP { // exclude opposite direction for each current direction
-                    direction = DOWN;
-                }
-            },
-            Some(Input::KeyUp) => {
-                if direction != DOWN {
-                    direction = UP;
-                }
-            },
-            Some(Input::KeyLeft) => {
-                if direction != RIGHT {
-                    direction = LEFT;
-                }
-            },
-            Some(Input::KeyRight) => {
-                if direction != LEFT {
-                    direction = RIGHT;
-                }
-            }
-            Some(_input) => (),
-            None => ()
-        }
+        board.catch_push_on_keyboard();
+
 
         // y
         // |
         // |
         // |
         // |__________ x
-        match true {
-            _ if snake_hit_right_wall(snake.head().x + direction.x, window.get_max_x()) => {
-                snake.next_step(Coordinate { x: 0, y: snake.head().y + direction.y });
-            },
-            _ if snake_hit_bottom_wall(snake.head().y + direction.y, window.get_max_x()) => {
-                snake.next_step(Coordinate { x: snake.head().x + direction.x, y: 0 });
-            },
-            _ if snake_hit_left_wall(&snake) => {
-                snake.next_step(Coordinate { x: window.get_max_x(), y: snake.head().y + direction.y });
-            },
-            _ if snake_hit_top_wall(&snake) => {
-                snake.next_step(Coordinate { x: snake.head().x + direction.x, y: window.get_max_x() / 2 });
-            },
-            _ => { // snake just moving properly
-                snake.next_step(Coordinate { x: snake.head().x + direction.x, y: snake.head().y + direction.y });
-            }
-        }
+        board.add_next_step_for_snake();
 
-        // speed definer - depends on already eaten food - consequently speed will increase
-        speed = 200 - (snake.len() * config.speed_coeff);
-
-        thread::sleep(Duration::from_millis(speed as u64));
+        board.increase_speed_as_need(config.speed_coeff);
+        thread::sleep(Duration::from_millis(board.snake_delay()));
     }
-}
-
-
-fn food_is_eaten(snake_head: &Coordinate, food: &Coordinate) -> bool {
-    snake_head.x == food.x && snake_head.y == food.y
 }
 // helpers
 fn snake_hit_right_wall(x: i32, window_width:i32) -> bool {
