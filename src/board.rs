@@ -16,7 +16,7 @@ const LEFT:Direction = Direction{y:0 , x:-1};
 const RIGHT:Direction = Direction{y:0 , x:1};
 
 pub struct Board<'a> {
-    window: &'a Window,
+    pub window: &'a Window,
     messages:Vec<&'a str>,
     curr_direction: Direction,
     food_coordinate:Coordinate,

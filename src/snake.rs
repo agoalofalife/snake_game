@@ -47,6 +47,10 @@ impl Snake {
     pub fn len(&self) -> i32 {
         self.len
     }
+
+    pub fn capacity(&self) -> i32 {
+        self.capacity
+    }
     pub fn has_reached_capacity(&self) -> bool {
         self.capacity == self.len
     }
