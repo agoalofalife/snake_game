@@ -7,6 +7,12 @@ pub struct Coordinate {
     pub y: i32,
 }
 
+impl Default for Coordinate {
+    fn default () -> Coordinate {
+        Coordinate{x: 0, y:0}
+    }
+}
+
 pub struct Snake {
     body: LinkedList<Coordinate>,
     len:i32,
@@ -15,8 +21,9 @@ pub struct Snake {
 }
 impl Snake {
     pub fn new(len:i32, capacity:i32, sign:String) -> Snake {
+        let init_point = Coordinate { x: 1, y: 1 };
         Snake {
-            body: LinkedList::from([Coordinate { x: 1, y: 1 }]), // init point
+            body: LinkedList::from([init_point]), // init point
             len,
             capacity,
             sign
